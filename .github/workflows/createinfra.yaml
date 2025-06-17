@@ -15,6 +15,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false  # Use PAT instead of default GITHUB_TOKEN
+
+      - name: Set Git User
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+      - name: Initialize Stage Tracking
+        run: echo "Workflow Started: $(date)" > stage_status.txt
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -22,10 +35,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Log AWS Credential Configuration
+        run: echo "Configured AWS Credentials: $(date)" >> stage_status.txt
+
       - name: Install eksctl
         run: |
           curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
+
+      - name: Log eksctl Installation
+        run: echo "Installed eksctl: $(date)" >> stage_status.txt
 
       - name: Create EKS Cluster in Default VPC
         run: |
@@ -40,3 +59,16 @@ jobs:
             --nodes-max 1 \
             --managed \
             --vpc-public-subnets auto
+
+      - name: Log Cluster Creation
+        run: echo "EKS Cluster Created: $(date)" >> stage_status.txt
+
+      - name: Commit and Push Stage Tracking File
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git checkout -b stage-tracking-update || git checkout stage-tracking-update
+          mv stage_status.txt stage_status.txt  # Adjust path if needed
+          git add stage_status.txt
+          git commit -m "Update stage tracking file from workflow run"
+          git push https://x-access-token:${GH_PAT}@github.com/${{ github.repository }} HEAD:stage-tracking-update
