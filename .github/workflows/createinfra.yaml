@@ -1,7 +1,6 @@
 name: EKS Cluster Provisioning
 
-on:
-  workflow_dispatch:
+on: workflow_dispatch
 
 env:
   AWS_REGION: us-east-1
@@ -9,6 +8,7 @@ env:
   NODE_TYPE: t3.medium
   NODE_COUNT: 2
   K8S_VERSION: "1.28"
+  TRACKING_FILE: stage_status.txt
 
 jobs:
   provision-eks:
@@ -18,35 +18,47 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
         with:
-          persist-credentials: false  # Use PAT instead of default GITHUB_TOKEN
+          persist-credentials: false
 
       - name: Set Git User
         run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
 
-      - name: Initialize Stage Tracking
-        run: echo "Workflow Started: $(date)" > stage_status.txt
+      - name: Load Existing Stage Tracking
+        id: check_stage
+        run: |
+          if [ -f "${{ env.TRACKING_FILE }}" ]; then
+            echo "Stage file exists"
+            LAST_STAGE=$(tail -n 1 "${{ env.TRACKING_FILE }}" | awk -F ":" '{print $1}' | xargs)
+            echo "last_stage=${LAST_STAGE}" >> "$GITHUB_OUTPUT"
+          else
+            echo "No stage file found. Starting fresh."
+            echo "last_stage=none" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Configure AWS Credentials
+      - name: Step 1 - Configure AWS Credentials
+        if: steps.check_stage.outputs.last_stage == 'none' || steps.check_stage.outputs.last_stage == 'Configure AWS Credentials'
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Mark Step 1 Complete
+        if: success()
+        run: echo "Configure AWS Credentials: $(date)" > ${{ env.TRACKING_FILE }}
 
-      - name: Log AWS Credential Configuration
-        run: echo "Configured AWS Credentials: $(date)" >> stage_status.txt
-
-      - name: Install eksctl
+      - name: Step 2 - Install eksctl
+        if: steps.check_stage.outputs.last_stage == 'Configure AWS Credentials' || steps.check_stage.outputs.last_stage == 'Install eksctl'
         run: |
           curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
+      - name: Mark Step 2 Complete
+        if: success()
+        run: echo "Install eksctl: $(date)" > ${{ env.TRACKING_FILE }}
 
-      - name: Log eksctl Installation
-        run: echo "Installed eksctl: $(date)" >> stage_status.txt
-
-      - name: Create EKS Cluster in Default VPC
+      - name: Step 3 - Create EKS Cluster
+        if: steps.check_stage.outputs.last_stage == 'Install eksctl' || steps.check_stage.outputs.last_stage == 'Create EKS Cluster'
         run: |
           eksctl create cluster \
             --name $CLUSTER_NAME \
@@ -59,16 +71,22 @@ jobs:
             --nodes-max 1 \
             --managed \
             --vpc-public-subnets auto
+      - name: Mark Step 3 Complete
+        if: success()
+        run: echo "Create EKS Cluster: $(date)" > ${{ env.TRACKING_FILE }}
 
-      - name: Log Cluster Creation
-        run: echo "EKS Cluster Created: $(date)" >> stage_status.txt
+      - name: Cleanup Stage File on Success
+        if: success()
+        run: |
+          echo "Cleaning up tracking file..."
+          rm -f ${{ env.TRACKING_FILE }}
 
-      - name: Commit and Push Stage Tracking File
+      - name: Push Stage File if Failed
+        if: failure() && steps.check_stage.outputs.last_stage != 'Create EKS Cluster'
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           git checkout -b stage-tracking-update || git checkout stage-tracking-update
-          mv stage_status.txt stage_status.txt  # Adjust path if needed
-          git add stage_status.txt
-          git commit -m "Update stage tracking file from workflow run"
+          git add ${{ env.TRACKING_FILE }}
+          git commit -m "Update stage tracking after failure"
           git push https://x-access-token:${GH_PAT}@github.com/${{ github.repository }} HEAD:stage-tracking-update
