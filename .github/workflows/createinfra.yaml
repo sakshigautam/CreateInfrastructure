@@ -1,17 +1,17 @@
-name: Infrastructure Provisioning
-on: 
+name: EKS Cluster Provisioning
+
+on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: us-east-1  
-  INSTANCE_TYPE: t3.medium
-  AMI_ID: ami-0c02fb55956c7d316
-  KEY_NAME: PrometheusKey
-  SECURITY_GROUP_ID: sg-06eff5f4c6f6e5e10
-  SUBNET_ID: subnet-068c08d255894fbae
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: github-eks-cluster
+  NODE_TYPE: t3.medium
+  NODE_COUNT: 2
+  K8S_VERSION: "1.28"
 
 jobs:
-  provision-ec2:
+  provision-eks:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,16 +22,25 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Launch EC2 Instance
+      - name: Install eksctl
         run: |
-          aws ec2 run-instances \
-            --image-id $AMI_ID \
-            --instance-type $INSTANCE_TYPE \
-            --key-name $KEY_NAME \
-            --security-group-ids $SECURITY_GROUP_ID \
-            --subnet-id $SUBNET_ID \
-            --count 1 \
-            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=GitHubActions-EC2}]'
+          curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+
+      - name: Create EKS Cluster in Default VPC
+        run: |
+          eksctl create cluster \
+            --name $CLUSTER_NAME \
+            --version $K8S_VERSION \
+            --region $AWS_REGION \
+            --nodegroup-name standard-workers \
+            --node-type $NODE_TYPE \
+            --nodes $NODE_COUNT \
+            --nodes-min 1 \
+            --nodes-max 3 \
+            --managed \
+            --vpc-public-subnets auto
+
 
       - name: Get Private IP Address of EC2 Instance
         id: get_private_ip
