@@ -37,6 +37,6 @@ jobs:
             --node-type $NODE_TYPE \
             --nodes $NODE_COUNT \
             --nodes-min 1 \
-            --nodes-max 3 \
+            --nodes-max 1 \
             --managed \
             --vpc-public-subnets auto
