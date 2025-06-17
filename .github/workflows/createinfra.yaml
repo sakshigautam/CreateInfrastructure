@@ -46,7 +46,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Mark Step 1 Complete
         if: success()
-        run: echo "Configure AWS Credentials: $(date)" > ${{ env.TRACKING_FILE }}
+        run: |
+          echo "Configure AWS Credentials: $(date)" > ${{ env.TRACKING_FILE }}
+
 
       - name: Step 2 - Install eksctl
         if: steps.check_stage.outputs.last_stage == 'Configure AWS Credentials' || steps.check_stage.outputs.last_stage == 'Install eksctl'
@@ -55,7 +57,8 @@ jobs:
           sudo mv /tmp/eksctl /usr/local/bin
       - name: Mark Step 2 Complete
         if: success()
-        run: echo "Install eksctl: $(date)" > ${{ env.TRACKING_FILE }}
+        run: |
+          echo "Install eksctl: $(date)" > ${{ env.TRACKING_FILE }}
 
       - name: Step 3 - Create EKS Cluster
         if: steps.check_stage.outputs.last_stage == 'Install eksctl' || steps.check_stage.outputs.last_stage == 'Create EKS Cluster'
@@ -73,7 +76,8 @@ jobs:
             --vpc-public-subnets auto
       - name: Mark Step 3 Complete
         if: success()
-        run: echo "Create EKS Cluster: $(date)" > ${{ env.TRACKING_FILE }}
+        run: |
+          echo "Create EKS Cluster: $(date)" > ${{ env.TRACKING_FILE }}
 
       - name: Cleanup Stage File on Success
         if: success()
