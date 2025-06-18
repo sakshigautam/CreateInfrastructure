@@ -40,7 +40,19 @@ jobs:
         run: |
           curl -s https://fluxcd.io/install.sh | sudo bash
 
-      
+      - name: Create EKS Cluster
+        run: |
+          eksctl create cluster \
+            --name $CLUSTER_NAME \
+            --version $K8S_VERSION \
+            --region $AWS_REGION \
+            --nodegroup-name standard-workers \
+            --node-type $NODE_TYPE \
+            --nodes $NODE_COUNT \
+            --nodes-min 1 \
+            --nodes-max 1 \
+            --managed
+
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
 
