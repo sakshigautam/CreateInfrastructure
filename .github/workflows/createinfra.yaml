@@ -1,54 +1,19 @@
-name: Create EC2 Instance with Default VPC
+name: Test AWS Credentials
 
 on: workflow_dispatch
 
 jobs:
-  create-ec2:
+  test-aws-credentials:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Configure AWS credentials
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1  # Change as needed
+          aws-region: us-east-1
 
-      - name: Get default VPC ID
-        id: vpc
+      - name: Test AWS credentials with STS
         run: |
-          DEFAULT_VPC_ID=$(aws ec2 describe-vpcs \
-            --filters Name=isDefault,Values=true \
-            --query 'Vpcs[0].VpcId' \
-            --output text)
-          echo "DEFAULT_VPC_ID=$DEFAULT_VPC_ID" >> $GITHUB_ENV
-
-      - name: Get default subnet ID
-        id: subnet
-        run: |
-          DEFAULT_SUBNET_ID=$(aws ec2 describe-subnets \
-            --filters Name=vpc-id,Values=$DEFAULT_VPC_ID Name=defaultForAz,Values=true \
-            --query 'Subnets[0].SubnetId' \
-            --output text)
-          echo "DEFAULT_SUBNET_ID=$DEFAULT_SUBNET_ID" >> $GITHUB_ENV
-
-      - name: Get default security group ID
-        id: sg
-        run: |
-          DEFAULT_SG_ID=$(aws ec2 describe-security-groups \
-            --filters Name=vpc-id,Values=$DEFAULT_VPC_ID Name=group-name,Values=default \
-            --query 'SecurityGroups[0].GroupId' \
-            --output text)
-          echo "DEFAULT_SG_ID=$DEFAULT_SG_ID" >> $GITHUB_ENV
-
-      - name: Launch EC2 instance
-        run: |
-          INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ami-0c94855ba95c71c99 \  # Amazon Linux 2 AMI in us-east-1; update if needed
-            --count 1 \
-            --instance-type t2.micro \
-            --subnet-id $DEFAULT_SUBNET_ID \
-            --security-group-ids $DEFAULT_SG_ID \
-            --query 'Instances[0].InstanceId' \
-            --output text)
-          echo "EC2 instance launched with ID: $INSTANCE_ID"
+          aws sts get-caller-identity
