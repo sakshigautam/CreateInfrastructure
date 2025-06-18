@@ -4,7 +4,7 @@ on: workflow_dispatch
 
 env:
   AWS_REGION: us-east-1
-  CLUSTER_NAME: github-eks-clu
+  CLUSTER_NAME: github-eks-cluster
   NODE_TYPE: t3.medium
   NODE_COUNT: 1
   K8S_VERSION: "1.28"
