@@ -8,8 +8,8 @@ env:
   NODE_TYPE: t3.medium
   NODE_COUNT: 1
   K8S_VERSION: "1.28"
-  FLUX_REPO_OWNER: your-org         # Replace with your GitHub org or username
-  FLUX_REPO_NAME: your-flux-repo    # Replace with your Flux Git repo name
+  FLUX_REPO_OWNER: "sakshigautam"         # Replace with your GitHub org or username
+  FLUX_REPO_NAME: "CreateInfrastructure"    # Replace with your Flux Git repo name
   FLUX_REPO_BRANCH: main
   FLUX_MANIFEST_PATH: ./clusters/github-eks-cluster  # Path in repo for Flux manifests
 
@@ -58,7 +58,7 @@ jobs:
 
       - name: Bootstrap Flux into EKS Cluster
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           flux bootstrap github \
             --owner=$FLUX_REPO_OWNER \
