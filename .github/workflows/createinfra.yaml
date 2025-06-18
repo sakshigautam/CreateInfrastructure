@@ -1,96 +1,54 @@
-name: EKS Cluster Provisioning
+name: Create EC2 Instance with Default VPC
 
 on: workflow_dispatch
 
-env:
-  AWS_REGION: us-east-1
-  CLUSTER_NAME: github-eks-cluster
-  NODE_TYPE: t3.medium
-  NODE_COUNT: 2
-  K8S_VERSION: "1.28"
-  TRACKING_FILE: stage_status.txt
-
 jobs:
-  provision-eks:
+  create-ec2:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
-        with:
-          persist-credentials: false
-
-      - name: Set Git User
-        run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
-
-      - name: Load Existing Stage Tracking
-        id: check_stage
-        run: |
-          if [ -f "${{ env.TRACKING_FILE }}" ]; then
-            echo "Stage file exists"
-            LAST_STAGE=$(tail -n 1 "${{ env.TRACKING_FILE }}" | awk -F ":" '{print $1}' | xargs)
-            echo "last_stage=${LAST_STAGE}" >> "$GITHUB_OUTPUT"
-          else
-            echo "No stage file found. Starting fresh."
-            echo "last_stage=none" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Step 1 - Configure AWS Credentials
-        if: steps.check_stage.outputs.last_stage == 'none' || steps.check_stage.outputs.last_stage == 'Configure AWS Credentials'
-        uses: aws-actions/configure-aws-credentials@v1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Mark Step 1 Complete
-        if: success()
-        run: |
-          echo "Configure AWS Credentials: $(date)" > ${{ env.TRACKING_FILE }}
+          aws-region: us-east-1  # Change as needed
 
+      - name: Get default VPC ID
+        id: vpc
+        run: |
+          DEFAULT_VPC_ID=$(aws ec2 describe-vpcs \
+            --filters Name=isDefault,Values=true \
+            --query 'Vpcs[0].VpcId' \
+            --output text)
+          echo "DEFAULT_VPC_ID=$DEFAULT_VPC_ID" >> $GITHUB_ENV
 
-      - name: Step 2 - Install eksctl
-        if: steps.check_stage.outputs.last_stage == 'Configure AWS Credentials' || steps.check_stage.outputs.last_stage == 'Install eksctl'
+      - name: Get default subnet ID
+        id: subnet
         run: |
-          curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-          sudo mv /tmp/eksctl /usr/local/bin
-      - name: Mark Step 2 Complete
-        if: success()
-        run: |
-          echo "Install eksctl: $(date)" > ${{ env.TRACKING_FILE }}
+          DEFAULT_SUBNET_ID=$(aws ec2 describe-subnets \
+            --filters Name=vpc-id,Values=$DEFAULT_VPC_ID Name=defaultForAz,Values=true \
+            --query 'Subnets[0].SubnetId' \
+            --output text)
+          echo "DEFAULT_SUBNET_ID=$DEFAULT_SUBNET_ID" >> $GITHUB_ENV
 
-      - name: Step 3 - Create EKS Cluster
-        if: steps.check_stage.outputs.last_stage == 'Install eksctl' || steps.check_stage.outputs.last_stage == 'Create EKS Cluster'
+      - name: Get default security group ID
+        id: sg
         run: |
-          eksctl create cluster \
-            --name $CLUSTER_NAME \
-            --version $K8S_VERSION \
-            --region $AWS_REGION \
-            --nodegroup-name standard-workers \
-            --node-type $NODE_TYPE \
-            --nodes $NODE_COUNT \
-            --nodes-min 1 \
-            --nodes-max 1 \
-            --managed \
-            --vpc-public-subnets auto
-      - name: Mark Step 3 Complete
-        if: success()
-        run: |
-          echo "Create EKS Cluster: $(date)" > ${{ env.TRACKING_FILE }}
+          DEFAULT_SG_ID=$(aws ec2 describe-security-groups \
+            --filters Name=vpc-id,Values=$DEFAULT_VPC_ID Name=group-name,Values=default \
+            --query 'SecurityGroups[0].GroupId' \
+            --output text)
+          echo "DEFAULT_SG_ID=$DEFAULT_SG_ID" >> $GITHUB_ENV
 
-      - name: Cleanup Stage File on Success
-        if: success()
+      - name: Launch EC2 instance
         run: |
-          echo "Cleaning up tracking file..."
-          rm -f ${{ env.TRACKING_FILE }}
-
-      - name: Push Stage File if Failed
-        if: failure() && steps.check_stage.outputs.last_stage != 'Create EKS Cluster'
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-        run: |
-          git checkout -b stage-tracking-update || git checkout stage-tracking-update
-          git add ${{ env.TRACKING_FILE }}
-          git commit -m "Update stage tracking after failure"
-          git push https://x-access-token:${GH_PAT}@github.com/${{ github.repository }} HEAD:stage-tracking-update
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-0c94855ba95c71c99 \  # Amazon Linux 2 AMI in us-east-1; update if needed
+            --count 1 \
+            --instance-type t2.micro \
+            --subnet-id $DEFAULT_SUBNET_ID \
+            --security-group-ids $DEFAULT_SG_ID \
+            --query 'Instances[0].InstanceId' \
+            --output text)
+          echo "EC2 instance launched with ID: $INSTANCE_ID"
