@@ -4,7 +4,6 @@ on: workflow_dispatch
 
 env:
   AWS_REGION: us-east-1
-  CLUSTER_NAME: github-eks-cluster
   NODE_TYPE: t3.medium
   NODE_COUNT: 1
   K8S_VERSION: "1.28"
@@ -14,6 +13,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Parse Cluster Name from HTML
+        id: parse_cluster
+        run: |
+          CLUSTER_NAME=$(grep -oP 'data-cluster="\K[^"]+' template.html)
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> $GITHUB_ENV
+          echo "Using cluster name: $CLUSTER_NAME"
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
