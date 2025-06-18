@@ -38,3 +38,5 @@ jobs:
             --nodes-min 1 \
             --nodes-max 1 \
             --managed
+            aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
+            kubectl create namespace my-namespace 
