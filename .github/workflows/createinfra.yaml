@@ -1,24 +1,23 @@
-name: Create EKS Cluster
+name: Create EKS Cluster and Bootstrap Flux
 
 on: workflow_dispatch
 
 env:
   AWS_REGION: us-east-1
+  CLUSTER_NAME: github-eks-cluster
   NODE_TYPE: t3.medium
   NODE_COUNT: 1
   K8S_VERSION: "1.28"
+  FLUX_REPO_OWNER: your-org         # Replace with your GitHub org or username
+  FLUX_REPO_NAME: your-flux-repo    # Replace with your Flux Git repo name
+  FLUX_REPO_BRANCH: main
+  FLUX_MANIFEST_PATH: ./clusters/github-eks-cluster  # Path in repo for Flux manifests
 
 jobs:
   create-eks:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Parse Cluster Name from HTML
-        id: parse_cluster
-        run: |
-          CLUSTER_NAME=$(grep -oP 'data-cluster="\K[^"]+' template.html)
-          echo "CLUSTER_NAME=$CLUSTER_NAME" >> $GITHUB_ENV
-          echo "Using cluster name: $CLUSTER_NAME"
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -37,7 +36,11 @@ jobs:
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
 
-      - name: Create EKS Cluster and Namespace
+      - name: Install Flux CLI
+        run: |
+          curl -s https://fluxcd.io/install.sh | sudo bash
+
+      - name: Create EKS Cluster
         run: |
           eksctl create cluster \
             --name $CLUSTER_NAME \
@@ -50,5 +53,20 @@ jobs:
             --nodes-max 1 \
             --managed
 
-          aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
-          kubectl create namespace my-namespace
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
+
+      - name: Bootstrap Flux into EKS Cluster
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          flux bootstrap github \
+            --owner=$FLUX_REPO_OWNER \
+            --repository=$FLUX_REPO_NAME \
+            --branch=$FLUX_REPO_BRANCH \
+            --path=$FLUX_MANIFEST_PATH \
+            --personal \
+            --token-auth
+
+      - name: Verify Flux Installation - List namespaces
+        run: kubectl get ns
