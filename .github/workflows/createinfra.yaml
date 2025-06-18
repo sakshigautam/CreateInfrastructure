@@ -1,6 +1,6 @@
-name: Create EKS Cluster
+name: EKS Pipeline Workflow
 
-on: workflow_dispatch
+on: [workflow_dispatch]
 
 env:
   AWS_REGION: us-east-1
@@ -10,10 +10,22 @@ env:
   K8S_VERSION: "1.28"
 
 jobs:
-  create-eks:
+  eks-pipeline:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set Commit Hash and State Directory
+        id: vars
+        run: |
+          GIT_COMMIT_HASH=$(git rev-parse --short HEAD)
+          echo "GIT_COMMIT_HASH=$GIT_COMMIT_HASH" >> $GITHUB_ENV
+          STATE_DIR="pipeline_state/$GIT_COMMIT_HASH"
+          echo "STATE_DIR=$STATE_DIR" >> $GITHUB_ENV
+          mkdir -p $STATE_DIR
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -30,7 +42,28 @@ jobs:
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
-
+          sudo mv kubectl /usr/local/bin
+          
+      - name: Deploy (EKS Cluster + Namespace)
+        if: ${{ !cancelled() && !exists(env.STATE_DIR + '/deploy.done') }}
+        run: |
+          echo "Running Deploy Stage..."
+          eksctl create cluster \
+            --name $CLUSTER_NAME \
+            --version $K8S_VERSION \
+            --region $AWS_REGION \
+            --nodegroup-name standard-workers \
+            --node-type $NODE_TYPE \
+            --nodes $NODE_COUNT \
+            --nodes-min 1 \
+            --nodes-max 1 \
+            --managed
           aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
-          kubectl create namespace my-namespace
+          kubectl create namespace my-namespace || echo "Namespace already exists"
+          touch $STATE_DIR/deploy.done
+
+      - name: Archive State Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-state
+          path: ${{ env.STATE_DIR }}/*.done
