@@ -1,38 +1,51 @@
 import boto3
-from botocore.exceptions import ClientError
+import base64
 import json
+import os
+from pathlib import Path
 
-def get_secret(secret_name, region_name):
-    # Create a Secrets Manager client
-    client = boto3.client('secretsmanager', region_name=region_name)
+# Load environment/config values
+SECRET_NAME = os.getenv("SECRET_NAME", "apps/staging/api-tls-cert")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+OUTPUT_FILE = os.getenv("OUTPUT_FILE", "secretcert/secret-tls.yaml")
+NAMESPACE = os.getenv("NAMESPACE", "default")
 
+# Fetch secret from AWS Secrets Manager
+def get_secret():
+    session = boto3.session.Session()
+    client = session.client(service_name='secretsmanager', region_name=AWS_REGION)
+    
     try:
-        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-    except ClientError as e:
-        print(f"Error retrieving secret: {e}")
+        get_secret_value_response = client.get_secret_value(SecretId=SECRET_NAME)
+        secret_data = get_secret_value_response['SecretString']
+        return json.loads(secret_data)
+    except Exception as e:
+        print(f"Error fetching secret: {e}")
         return None
 
-    # Secrets Manager returns the secret either as a string or binary
-    if 'SecretString' in get_secret_value_response:
-        secret = get_secret_value_response['SecretString']
-        # If the secret is JSON formatted, parse it (optional)
-        try:
-            secret_dict = json.loads(secret)
-            return secret_dict
-        except json.JSONDecodeError:
-            return secret
-    else:
-        # Secret is binary, decode it
-        secret = get_secret_value_response['SecretBinary']
-        return secret
+# Generate Kubernetes TLS secret manifest
+def write_k8s_secret(cert: str, key: str):
+    Path("manifests").mkdir(parents=True, exist_ok=True)
+    with open(OUTPUT_FILE, "w") as f:
+        f.write(f"""
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dremio-tls
+  namespace: {NAMESPACE}
+type: kubernetes.io/tls
+data:
+  tls.crt: {cert}
+  tls.key: {key}
+""")
+        print(f"Secret manifest written to {OUTPUT_FILE}")
 
 if __name__ == "__main__":
-    secret_name = "apps/staging/api-tls-cert"
-    region_name = "us-east-1"
-
-    secret = get_secret(secret_name, region_name)
-    if secret:
-        print("Secret fetched successfully:")
-        print(secret)
+    secret = get_secret()
+    if secret and 'tls.crt' in secret and 'tls.key' in secret:
+        # Base64 encode cert and key
+        crt_b64 = base64.b64encode(secret['tls.crt'].encode()).decode()
+        key_b64 = base64.b64encode(secret['tls.key'].encode()).decode()
+        write_k8s_secret(crt_b64, key_b64)
     else:
-        print("Failed to fetch the secret.")
+        print(" Missing tls.crt or tls.key in secret")
