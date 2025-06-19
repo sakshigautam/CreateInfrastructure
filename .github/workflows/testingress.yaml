@@ -1,0 +1,54 @@
+name: Test Ingress with Port-Forward
+
+on: workflow_dispatch
+
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: github-eks-cluster
+
+jobs:
+  test-ingress:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Tools (kubectl, jq, netcat)
+        run: |
+          # kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+          # flux
+          curl -s https://fluxcd.io/install.sh | sudo bash
+
+          # jq & nc
+          sudo apt-get update && sudo apt-get install -y jq netcat
+
+      - name: Update kubeconfig for existing EKS cluster
+        run: |
+          aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
+
+      - name: Port-forward ingress-nginx and test curl
+        run: |
+          echo "Starting port-forward..."
+          kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 8080:80 &
+          PORT_FORWARD_PID=$!
+
+          # Wait until port is ready
+          for i in {1..10}; do
+            nc -z localhost 8080 && break
+            echo "Waiting for port 8080 to be ready... ($i/10)"
+            sleep 2
+          done
+
+          echo "Running curl to test Ingress..."
+          curl -v -H "Host: podinfo.staging" http://localhost:8080 || echo "Curl failed!"
+
+          echo "Cleaning up..."
+          kill $PORT_FORWARD_PID || true
