@@ -42,10 +42,10 @@ data:
 
 if __name__ == "__main__":
     secret = get_secret()
-    if secret and 'tls.crt' in secret and 'tls.key' in secret:
+    if secret and 'cert' in secret and 'key' in secret:
         # Base64 encode cert and key
-        crt_b64 = base64.b64encode(secret['tls.crt'].encode()).decode()
-        key_b64 = base64.b64encode(secret['tls.key'].encode()).decode()
+        crt_b64 = base64.b64encode(secret['cert'].encode()).decode()
+        key_b64 = base64.b64encode(secret['key'].encode()).decode()
         write_k8s_secret(crt_b64, key_b64)
     else:
-        print(" Missing tls.crt or tls.key in secret")
+        print(" Missing cert or key in secret")
