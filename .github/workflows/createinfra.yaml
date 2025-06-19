@@ -25,16 +25,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       
-      - name: Fetch secret from AWS Secrets Manager
-        id: fetch_secret
-        run: |
-          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id ${{ env.SECRET_NAME }} --query SecretString --output text)
-          echo "Secret JSON: $SECRET_JSON"
-          # Extract cluster_name from the JSON secret, assuming the secret is like {"cluster_name":"my-eks-cluster"}
-          CLUSTER_NAME=$(echo $SECRET_JSON | jq -r '.cluster_name')
-          echo "CLUSTER_NAME=$CLUSTER_NAME" >> $GITHUB_ENV
-
-
+      
       - name: Install eksctl
         run: |
           curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
