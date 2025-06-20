@@ -4,14 +4,14 @@ on: workflow_dispatch
 
 env:
   AWS_REGION: us-east-1
-  CLUSTER_NAME: github-eks-cluster
+  CLUSTER_NAME: github-eks-cluster-k
   NODE_TYPE: t3.medium
   NODE_COUNT: 1
   K8S_VERSION: "1.28"
   FLUX_REPO_OWNER: "sakshigautam"         # Replace with your GitHub org or username
-  FLUX_REPO_NAME: "FluxWithHelm"    # Replace with your Flux Git repo name
+  FLUX_REPO_NAME: "FluxWithHelm"           # Replace with your Flux Git repo name
   FLUX_REPO_BRANCH: main
-  FLUX_MANIFEST_PATH: ./clusters/github-eks-cluster  # Path in repo for Flux manifests
+  FLUX_MANIFEST_PATH: ./clusters/github-eks-cluster # Path in repo for Flux manifests
 
 jobs:
   create-eks:
@@ -24,7 +24,6 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      
       
       - name: Install eksctl
         run: |
@@ -41,7 +40,17 @@ jobs:
         run: |
           curl -s https://fluxcd.io/install.sh | sudo bash
 
-      - name: Create EKS Cluster
+      - name: Check if EKS cluster exists
+        id: check_cluster
+        run: |
+          if aws eks describe-cluster --name $CLUSTER_NAME --region $AWS_REGION > /dev/null 2>&1; then
+            echo "cluster_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "cluster_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create EKS Cluster (if not exists)
+        if: steps.check_cluster.outputs.cluster_exists == 'false'
         run: |
           eksctl create cluster \
             --name $CLUSTER_NAME \
@@ -53,10 +62,24 @@ jobs:
             --nodes-min 1 \
             --nodes-max 1 \
             --managed
-            aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
-            kubectl create namespace my-namespace
 
-    
+      - name: Update kubeconfig for cluster
+        run: |
+          aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
+
+      - name: Check if namespace exists
+        id: check_namespace
+        run: |
+          if kubectl get namespace my-namespace > /dev/null 2>&1; then
+            echo "namespace_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "namespace_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create namespace (if not exists)
+        if: steps.check_namespace.outputs.namespace_exists == 'false'
+        run: |
+          kubectl create namespace my-namespace
 
       - name: Bootstrap Flux into EKS Cluster
         env:
